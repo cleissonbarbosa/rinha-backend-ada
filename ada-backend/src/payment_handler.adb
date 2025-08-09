@@ -19,6 +19,47 @@ package body Payment_Handler is
 
    Default_Processor_URL  : Unbounded_String;
    Fallback_Processor_URL : Unbounded_String;
+      Replica_Peers          : Unbounded_String;
+
+   -- Simple in-flight limiter to avoid overload and reduce lag
+   protected type Inflight_Limiter is
+      procedure Try_Acquire (Acquired : out Boolean);
+      procedure Release;
+      procedure Set_Max (Value : Natural);
+   private
+      In_Flight   : Natural := 0;
+      Max_Allowed : Natural := 64;
+   end Inflight_Limiter;
+
+   protected body Inflight_Limiter is
+      procedure Try_Acquire (Acquired : out Boolean) is
+      begin
+         if In_Flight < Max_Allowed then
+            In_Flight := In_Flight + 1;
+            Acquired := True;
+         else
+            Acquired := False;
+         end if;
+      end Try_Acquire;
+
+      procedure Release is
+      begin
+         if In_Flight > 0 then
+            In_Flight := In_Flight - 1;
+         end if;
+      end Release;
+
+      procedure Set_Max (Value : Natural) is
+      begin
+         if Value = 0 then
+            Max_Allowed := 1;
+         else
+            Max_Allowed := Value;
+         end if;
+      end Set_Max;
+   end Inflight_Limiter;
+
+   Limiter : Inflight_Limiter;
 
    procedure Initialize is
    begin
@@ -34,9 +75,19 @@ package body Payment_Handler is
              ("PAYMENT_PROCESSOR_FALLBACK",
               "http://payment-processor-fallback:8080"));
 
-      Put_Line ("Payment processors initialized:");
-      Put_Line ("   Default: " & To_String (Default_Processor_URL));
-      Put_Line ("   Fallback: " & To_String (Fallback_Processor_URL));
+         Replica_Peers := To_Unbounded_String (
+            Ada.Environment_Variables.Value ("REPLICA_PEERS", ""));
+
+      -- Configure limiter from env INFLIGHT_LIMIT (per-instance)
+      declare
+         MaxS : constant String := Ada.Environment_Variables.Value ("INFLIGHT_LIMIT", "64");
+         MaxV : Natural := 64;
+      begin
+         begin
+            MaxV := Natural'Value (MaxS);
+         exception when others => MaxV := 64; end;
+         Limiter.Set_Max (MaxV);
+      end;
    end Initialize;
 
    -- Format current UTC time as strict ISO8601 with milliseconds and Z
@@ -119,9 +170,6 @@ package body Payment_Handler is
         & Requested_At
         & """}";
    begin
-      Put_Line ("Trying processor: " & URL);
-      Put_Line ("Payload: " & JSON_Payload);
-
       -- Try to make HTTP request using AWS.Client
       declare
          Response : AWS.Response.Data;
@@ -133,45 +181,85 @@ package body Payment_Handler is
               Content_Type => "application/json");
 
          if AWS.Response.Status_Code (Response) = AWS.Messages.S200 then
-            Put_Line ("Payment processed successfully by " & URL);
             return True;
          else
-            Put_Line
-              ("Payment failed - Status: "
-               & AWS.Messages.Status_Code'Image
-                   (AWS.Response.Status_Code (Response)));
             return False;
          end if;
       exception
          when others =>
-            Put_Line ("Exception calling processor: " & URL);
             return False;
       end;
    end Try_Payment_Processor;
+
+   -- Best-effort replication to peer instances
+   procedure Replicate_Payment (
+     Correlation_Id : String;
+     Amount_Str     : String;
+     Processor      : String;
+     Requested_At   : String) is
+   begin
+      if Length (Replica_Peers) = 0 then
+         return;
+      end if;
+
+      declare
+         Peers : constant String := To_String (Replica_Peers);
+         I     : Positive := Peers'First;
+         J     : Positive := Peers'First;
+      begin
+         while J <= Peers'Last + 1 loop
+            if J = Peers'Last + 1 or else Peers (J) = ',' then
+               declare
+                  Peer : String := Peers (I .. J - 1);
+                  Payload : constant String :=
+                    '{' & '"' & "correlationId" & '"' & ":""" & Correlation_Id & '"' &
+                    "," & '"' & "amount" & '"' & ":" & Amount_Str &
+                    "," & '"' & "processor" & '"' & ":""" & Processor & '"' &
+                    "," & '"' & "requestedAt" & '"' & ":""" & Requested_At & '"' & '}';
+               begin
+                  while Peer'Length > 0 and then Peer (Peer'First) = ' ' loop
+                     Peer := Peer (Peer'First + 1 .. Peer'Last);
+                  end loop;
+                  while Peer'Length > 0 and then Peer (Peer'Last) = ' ' loop
+                     Peer := Peer (Peer'First .. Peer'Last - 1);
+                  end loop;
+
+                  if Peer'Length > 0 then
+                     declare
+                        Resp : AWS.Response.Data;
+                        URL  : constant String := Peer & "/internal/replicate";
+                     begin
+                        Resp := AWS.Client.Post (URL => URL, Data => Payload, Content_Type => "application/json");
+                        pragma Unreferenced (Resp);
+                     exception
+                        when others => null;
+                     end;
+                  end if;
+               end;
+               I := J + 1;
+            end if;
+            J := J + 1;
+         end loop;
+      end;
+   end Replicate_Payment;
 
    function Process_Payment (Request_Body : String) return String is
       Correlation_Id : constant String :=
         Parse_JSON_Field (Request_Body, "correlationId");
       Amount_Str     : constant String :=
         Parse_JSON_Field (Request_Body, "amount");
-      Req_At_Str     : String := Parse_JSON_Field (Request_Body, "requestedAt");
+      Req_At_Str     : Unbounded_String := To_Unbounded_String(Parse_JSON_Field (Request_Body, "requestedAt"));
       Amount         : Long_Float;
       Success        : Boolean := False;
       Processor_Used : Unbounded_String;
    begin
-      Put_Line ("Processing payment request");
-      Put_Line ("Correlation ID: " & Correlation_Id);
-      Put_Line ("Amount: " & Amount_Str);
-
    -- Validate input (correlationId and amount must exist)
    if Correlation_Id = "" or else Amount_Str = "" then
-         Put_Line ("Invalid request - missing fields");
          return "{""error"":""correlationId and amount are required""}";
       end if;
 
       -- Validate UUID format (basic check)
       if Correlation_Id'Length /= 36 then
-         Put_Line ("Invalid correlation ID format - wrong length");
          return "{""error"":""Invalid correlationId format""}";
       end if;
       
@@ -180,7 +268,6 @@ package body Payment_Handler is
          or else Correlation_Id (Correlation_Id'First + 13) /= '-'
          or else Correlation_Id (Correlation_Id'First + 18) /= '-'
          or else Correlation_Id (Correlation_Id'First + 23) /= '-' then
-         Put_Line ("Invalid correlation ID format - wrong dash positions");
          return "{""error"":""Invalid correlationId format""}";
       end if;
 
@@ -188,71 +275,71 @@ package body Payment_Handler is
       begin
          Amount := Long_Float'Value (Amount_Str);
          if Amount <= 0.0 then
-            Put_Line ("Invalid amount - must be positive");
             return "{""error"":""Amount must be positive""}";
          end if;
       exception
          when others =>
-            Put_Line ("Invalid amount format");
             return "{""error"":""Invalid amount format""}";
       end;
 
       -- If requestedAt absent, generate now in ISO 8601 UTC Z
-      if Req_At_Str = "" then
-         Req_At_Str := Now_ISO8601_UTC;
+      if Length(Req_At_Str) = 0 then
+         Req_At_Str := To_Unbounded_String(Now_ISO8601_UTC);
       end if;
 
       -- Check if payment already exists (for idempotency)
       declare
-         Check_SQL : constant String := 
-           "SELECT processor_type FROM payments WHERE correlation_id = '" & 
-           Correlation_Id & "';";
-         Existing_Result : constant String := 
-           Database_Handler.Execute_SQL_Query (Check_SQL);
+         Existing_Processor : constant String := Database_Handler.Get_Processor_Type (Correlation_Id);
       begin
-         if Existing_Result'Length > 1 then  -- Not empty
-            declare
-               Existing_Processor : constant String := 
-                 Ada.Strings.Fixed.Trim (Existing_Result, Ada.Strings.Both);
-            begin
-               Put_Line ("Payment already exists with processor: " & Existing_Processor);
-               return
-                 "{""message"":""Payment processed successfully"","
-                 & """processor"":"""
-                 & Existing_Processor
-                 & """}";
-            end;
+         if Existing_Processor /= "" then
+            return
+              "{""message"":""Payment processed successfully""," &
+              '"' & "processor" & '"' & ":""" & Existing_Processor & '"' & "}";
          end if;
       end;
 
       -- Try default processor first (lower fees)
-         Success :=
-            Try_Payment_Processor
-               (To_String (Default_Processor_URL), Correlation_Id, Amount_Str, Req_At_Str);
+      -- Apply simple backpressure to avoid overload
+      declare
+         Acq : Boolean := False;
+      begin
+         Limiter.Try_Acquire (Acq);
+         if not Acq then
+            return "{""error"":""too many requests""}";
+         end if;
+      end;
+
+      Success :=
+         Try_Payment_Processor
+            (To_String (Default_Processor_URL), Correlation_Id, Amount_Str, To_String(Req_At_Str));
       if Success then
          Processor_Used := To_Unbounded_String ("default");
       else
-         Put_Line ("Default processor failed, trying fallback...");
          Success :=
                 Try_Payment_Processor
-                   (To_String (Fallback_Processor_URL), Correlation_Id, Amount_Str, Req_At_Str);
+                   (To_String (Fallback_Processor_URL), Correlation_Id, Amount_Str, To_String(Req_At_Str));
          if Success then
             Processor_Used := To_Unbounded_String ("fallback");
          end if;
       end if;
 
-      if Success then
-             -- Store payment in database with the same requestedAt used
-             Database_Handler.Store_Payment
-                (Correlation_Id, Amount, To_String (Processor_Used), Req_At_Str);
-         Put_Line ("Payment processed and stored successfully");
+         if Success then
+                   -- Use commit time (success moment) to align with processors' summary window
+                   declare
+                      Commit_At : constant String := Now_ISO8601_UTC;
+                   begin
+                      Database_Handler.Store_Payment
+                           (Correlation_Id, Amount, To_String (Processor_Used), Commit_At);
+                      Replicate_Payment (Correlation_Id, Amount_Str, To_String (Processor_Used), Commit_At);
+                   end;
+            Limiter.Release;
          return
            "{""message"":""Payment processed successfully"","
            & """processor"":"""
            & To_String (Processor_Used)
            & """}";
       else
-         Put_Line ("All payment processors failed");
+         Limiter.Release;
          return
            "{""error"":"
            & """Payment processing failed - all processors unavailable""}";

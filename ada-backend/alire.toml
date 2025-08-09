@@ -20,8 +20,4 @@ utilada = "^2.6"
 [[depends-on]]
 gnatcoll = "^24.0"
 
-[[depends-on]]
-ado_postgresql = "^2.4.1"
-
-[[depends-on]]
-ado = "^2.4.1"
+# Postgres dependencies removed for in-memory storage

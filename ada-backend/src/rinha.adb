@@ -34,7 +34,8 @@ begin
    -- Configure AWS
    Config := AWS.Config.Get_Current;
    AWS.Config.Set.Server_Port (Config, Server_Port);
-   AWS.Config.Set.Max_Connection (Config, 100);
+   -- Increase maximum concurrent connections to handle high VU load
+   AWS.Config.Set.Max_Connection (Config, 512);
    AWS.Config.Set.Server_Name (Config, "Rinha-Ada-Backend");
    AWS.Config.Set.Server_Host (Config, "0.0.0.0"); -- Bind to all interfaces
 

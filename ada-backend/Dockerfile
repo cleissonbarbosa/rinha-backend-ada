@@ -4,8 +4,7 @@ WORKDIR /app
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    libpq-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy pre-compiled binary

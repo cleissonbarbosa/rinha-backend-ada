@@ -13,7 +13,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADA_DIR="$ROOT_DIR/ada-backend"
-PP_COMPOSE="$ROOT_DIR/rinha-de-backend-2025-payment-processor/containerization/docker-compose.yml"
+PP_COMPOSE="$ROOT_DIR/rinha-de-backend-2025/payment-processor/docker-compose.yml"
 BACKEND_COMPOSE="$ADA_DIR/docker-compose.yml"
 IMAGE_TAG="rinha-ada-backend:latest"
 

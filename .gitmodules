@@ -2,8 +2,3 @@
 	path = rinha-de-backend-2025
 	url = git@github.com:zanfranceschi/rinha-de-backend-2025.git
 	branch = main
-
-[submodule "rinha-de-backend-2025-payment-processor"]
-	path = rinha-de-backend-2025-payment-processor
-	url = git@github.com:zanfranceschi/rinha-de-backend-2025-payment-processor.git
-	branch = main

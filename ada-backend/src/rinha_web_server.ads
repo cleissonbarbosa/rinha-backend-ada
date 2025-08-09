@@ -15,4 +15,10 @@ package Rinha_Web_Server is
    function Handle_Health_Request
      (Request : AWS.Status.Data) return AWS.Response.Data;
 
+   function Handle_Replicate_Request
+     (Request : AWS.Status.Data) return AWS.Response.Data;
+
+   function Handle_Internal_Summary_Request
+     (Request : AWS.Status.Data) return AWS.Response.Data;
+
 end Rinha_Web_Server;
