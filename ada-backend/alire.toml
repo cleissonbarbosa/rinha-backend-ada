@@ -1,0 +1,27 @@
+name = "rinha"
+description = "rinha de backend 2025"
+version = "0.1.0-dev"
+
+authors = ["cleisson abrbosa"]
+maintainers = ["cleisson abrbosa <example@example.com>"]
+maintainers-logins = ["cleissonbarbosa"]
+licenses = "MIT"
+website = ""
+tags = []
+
+executables = ["rinha"]
+
+[[depends-on]]
+aws = "^24.0"
+
+[[depends-on]]
+utilada = "^2.6"
+
+[[depends-on]]
+gnatcoll = "^24.0"
+
+[[depends-on]]
+ado_postgresql = "^2.4.1"
+
+[[depends-on]]
+ado = "^2.4.1"
