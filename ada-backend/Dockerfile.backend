@@ -1,0 +1,16 @@
+# Runtime stage only - use pre-built binary
+FROM debian:bookworm-slim
+SHELL ["/bin/bash", "-lc"]
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+RUN apt-get update && \
+		apt-get install -y --no-install-recommends \
+			ca-certificates libgcc-s1 zlib1g libgnat-12 libssl3 && \
+		update-ca-certificates && \
+		rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv
+# Copy the pre-built binary
+COPY bin/main_backend /srv/main_backend
+RUN chmod +x /srv/main_backend
+EXPOSE 9001/udp 9002/udp 9003/udp 9004/udp
+CMD ["/srv/main_backend"]

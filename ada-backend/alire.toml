@@ -1,23 +1,13 @@
-name = "rinha"
-description = "rinha de backend 2025"
-version = "0.1.0-dev"
-
+name = "rinha_ada"
+version = "0.1.0"
+description = "Ada backend and load balancer for Rinha 2025"
 authors = ["cleisson abrbosa"]
 maintainers = ["cleisson abrbosa <example@example.com>"]
 maintainers-logins = ["cleissonbarbosa"]
 licenses = "MIT"
 website = ""
 tags = []
-
-executables = ["rinha"]
+executables = ["main_backend", "main_lb"]
 
 [[depends-on]]
 aws = "^24.0"
-
-[[depends-on]]
-utilada = "^2.6"
-
-[[depends-on]]
-gnatcoll = "^24.0"
-
-# Postgres dependencies removed for in-memory storage

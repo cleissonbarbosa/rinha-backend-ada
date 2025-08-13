@@ -1,0 +1,14 @@
+FROM debian:bookworm-slim AS runtime
+SHELL ["/bin/bash", "-lc"]
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+RUN apt-get update && \
+		apt-get install -y --no-install-recommends \
+			ca-certificates libgcc-s1 zlib1g libgnat-12 libssl3 && \
+		update-ca-certificates && \
+		rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv
+COPY bin/main_lb /srv/main_lb
+RUN chmod +x /srv/main_lb
+EXPOSE 9999 9998/udp
+CMD ["/srv/main_lb"]

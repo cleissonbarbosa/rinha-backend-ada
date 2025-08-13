@@ -1,59 +1,84 @@
 services:
-  nginx:
-    image: nginx:alpine
-    container_name: rinha-nginx
+  backend-1:
+    image: ada-backend-optimized:latest
+    container_name: ada-backend-1
+    restart: always
+    environment:
+      RETRY_API_DEFAULT: 15
+      URL_PROCESSOR_DEFAULT: http://payment-processor-default:8080/payments
+      URL_PROCESSOR_FALLBACK: http://payment-processor-fallback:8080/payments
+      UDP_CHANNEL_PORT: 9001
+      UDP_CHANNEL_INTERNAL_PORT: 9003
+      EXTERNAL_UDP_HOST: backend-2
+      EXTERNAL_UDP_PORT: 9004
     ports:
-      - "9999:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - "9001:9001/udp"
+      - "9003:9003/udp"
+    networks:
+      backend:
+        ipv4_address: 172.20.0.10
+      payment-processor:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.6'
+          memory: '125MB'
+
+  backend-2:
+    image: ada-backend-optimized:latest
+    container_name: ada-backend-2
+    restart: always
+    environment:
+      RETRY_API_DEFAULT: 15
+      URL_PROCESSOR_DEFAULT: http://payment-processor-default:8080/payments
+      URL_PROCESSOR_FALLBACK: http://payment-processor-fallback:8080/payments
+      UDP_CHANNEL_PORT: 9002
+      UDP_CHANNEL_INTERNAL_PORT: 9004
+      EXTERNAL_UDP_HOST: backend-1
+      EXTERNAL_UDP_PORT: 9003
+    ports:
+      - "9002:9002/udp"
+      - "9004:9004/udp"
+    networks:
+      backend:
+        ipv4_address: 172.20.0.11
+      payment-processor:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.6'
+          memory: '125MB'
+
+  load-balancer:
+    image: ada-lb-optimized:latest
+    container_name: ada-lb
+    restart: always
     depends_on:
-      - backend1
-      - backend2
-    networks:
-      - rinha-network
-      - payment-processor
-    deploy:
-      resources:
-        limits:
-          cpus: "0.3"
-          memory: "50MB"
-
-  backend1:
-    image: rinha-ada-backend:latest
-    container_name: rinha-backend1
+      - backend-1
+      - backend-2
+    ports:
+      - "9999:9999"
+      - "9998:9998/udp"
     environment:
-      - SERVER_PORT=8080
-      - PAYMENT_PROCESSOR_DEFAULT=http://payment-processor-default:8080
-      - PAYMENT_PROCESSOR_FALLBACK=http://payment-processor-fallback:8080
-      - REPLICA_PEERS=http://backend2:8080
+      BACK_END_1_URL: backend-1
+      BACK_END_1_PORT: 9001
+      BACK_END_2_URL: backend-2
+      BACK_END_2_PORT: 9002
     networks:
-      - rinha-network
-      - payment-processor
+      backend:
+        ipv4_address: 172.20.0.5
     deploy:
       resources:
         limits:
-          cpus: "0.6"
-          memory: "150MB"
-
-  backend2:
-    image: rinha-ada-backend:latest
-    container_name: rinha-backend2
-    environment:
-      - SERVER_PORT=8080
-      - PAYMENT_PROCESSOR_DEFAULT=http://payment-processor-default:8080
-      - PAYMENT_PROCESSOR_FALLBACK=http://payment-processor-fallback:8080
-      - REPLICA_PEERS=http://backend1:8080
-    networks:
-      - rinha-network
-      - payment-processor
-    deploy:
-      resources:
-        limits:
-          cpus: "0.6"
-          memory: "150MB"
+          cpus: "0.30"
+          memory: "100MB"
 
 networks:
-  rinha-network:
+  backend:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
   payment-processor:
     external: true
