@@ -6,6 +6,7 @@ with Properties; use Properties;
 with LB_Event_Types;
 with Waiter;
 with Ada.Exceptions;
+with Ada.Calendar; use Ada.Calendar;
 
 package body LB_Socket_Router is
    package U renames UDP_Socket_Utils;
@@ -86,7 +87,9 @@ package body LB_Socket_Router is
 
    procedure Await_Response (Out_S : out Unbounded_String) is
       Retry_Count : Natural := 0;
-      Max_ACK_Count : constant := 20000; -- Greatly increase limit to handle high payment volume during k6 tests
+      Max_ACK_Count : constant := 50000; -- Handle very high payment volume during k6 tests
+      Start_Time : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+      Max_Wait_Time : constant Duration := 5.0;  -- Maximum wait time in seconds
    begin
       loop
          select
@@ -97,9 +100,16 @@ package body LB_Socket_Router is
             begin
                if Response /= "ACK" and Response /= "ERR" then
                   -- Valid response (likely JSON)
+                  Put_Line ("LB: Received valid response, length:" & Response'Length'Image);
                   exit; 
                else
                   Retry_Count := Retry_Count + 1;
+                  -- Check if we've exceeded time limit
+                  if Ada.Calendar.Clock - Start_Time > Max_Wait_Time then
+                     Put_Line ("LB: Time limit exceeded (" & Max_Wait_Time'Image & "s), using fallback");
+                     Out_S := To_Unbounded_String ("{""default"":{""totalRequests"": 0,""totalAmount"":0.0},""fallback"":{""totalRequests"": 0,""totalAmount"":0.0}}");
+                     exit;
+                  end if;
                   -- If we've seen too many ACKs, something is wrong
                   if Retry_Count > Max_ACK_Count then
                      Put_Line ("LB: Too many ACKs received (" & Retry_Count'Image & "), using fallback");
@@ -109,10 +119,13 @@ package body LB_Socket_Router is
                end if;
             end;
          or
-            delay 10.0;  -- Increase timeout for summary operations
-            Put_Line ("LB: Summary request timed out, using fallback");
-            Out_S := To_Unbounded_String ("{""default"":{""totalRequests"": 0,""totalAmount"":0.0},""fallback"":{""totalRequests"": 0,""totalAmount"":0.0}}");
-            exit;
+            delay 0.5;  -- Short polling interval
+            -- Check timeout
+            if Ada.Calendar.Clock - Start_Time > Max_Wait_Time then
+               Put_Line ("LB: Summary request timed out after " & Max_Wait_Time'Image & "s, using fallback");
+               Out_S := To_Unbounded_String ("{""default"":{""totalRequests"": 0,""totalAmount"":0.0},""fallback"":{""totalRequests"": 0,""totalAmount"":0.0}}");
+               exit;
+            end if;
          end select;
       end loop;
    end Await_Response;

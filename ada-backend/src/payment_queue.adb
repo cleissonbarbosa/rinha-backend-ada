@@ -71,7 +71,7 @@ package body Payment_Queue is
       Amount : Long_Long_Float;
       Success : Boolean;
       Retry_Count : Natural;
-      Max_Retries : constant := 15; -- Same as Java
+      Max_Retries : constant := 3; -- Reduced from 15 for better performance
    begin
       loop
          begin
@@ -127,30 +127,51 @@ package body Payment_Queue is
             while Retry_Count < Max_Retries and not Success loop
                -- Try default processor first
                Put_Line ("Worker: Calling Send_Payment_Default, retry=" & Retry_Count'Image);
-               Put_Line ("Worker: Payload being sent: " & To_String (Payment_JSON));
+               -- Put_Line ("Worker: Payload being sent: " & To_String (Payment_JSON));
                if Send_Payment_Default (To_String (Payment_JSON)) then
-                  -- Save to database as DEFAULT
-                  Put_Line ("Worker: Payment sent successfully to DEFAULT processor");
-                  DB.Add_Default (Amount);
-                  Put_Line ("Worker: DB.Add_Default called with amount: " & Long_Long_Float'Image(Amount));
+                  -- Save to database as DEFAULT with deduplication
+                  -- Put_Line ("Worker: Payment sent successfully to DEFAULT processor");
+                  declare
+                     Is_New : Boolean;
+                  begin
+                     DB.Add_Default (Float(Amount), To_String (Correlation_ID), Is_New);
+                     if Is_New then
+                        -- Put_Line ("Worker: DB.Add_Default called successfully with amount: " & Long_Long_Float'Image(Amount));
+                        null;
+                     else
+                        -- Put_Line ("Worker: Payment with correlation ID " & To_String (Correlation_ID) & " already processed, skipping");
+                        null;
+                     end if;
+                  end;
                   Success := True;
                   exit;
                end if;
                
-               Put_Line ("Worker: Default processor failed, retry_count=" & Retry_Count'Image);
+               -- Put_Line ("Worker: Default processor failed, retry_count=" & Retry_Count'Image);
                Retry_Count := Retry_Count + 1;
                
                -- Small delay between retries
-               delay 0.01;
+               delay 0.001; -- Reduced delay for better performance
             end loop;
             
             -- If default failed after retries, try fallback
             if not Success then
-               Put_Line ("Worker: Trying fallback processor");
+               -- Put_Line ("Worker: Trying fallback processor");
                if Send_Payment_Fallback (To_String (Payment_JSON)) then
-                  -- Save to database as FALLBACK
-                  Put_Line ("Worker: Payment sent successfully to FALLBACK processor");
-                  DB.Add_Fallback (Amount);
+                  -- Save to database as FALLBACK with deduplication
+                  -- Put_Line ("Worker: Payment sent successfully to FALLBACK processor");
+                  declare
+                     Is_New : Boolean;
+                  begin
+                     DB.Add_Fallback (Float(Amount), To_String (Correlation_ID), Is_New);
+                     if Is_New then
+                        -- Put_Line ("Worker: DB.Add_Fallback called successfully with amount: " & Long_Long_Float'Image(Amount));
+                        null;
+                     else
+                        -- Put_Line ("Worker: Payment with correlation ID " & To_String (Correlation_ID) & " already processed, skipping");
+                        null;
+                     end if;
+                  end;
                   Success := True;
                end if;
             end if;

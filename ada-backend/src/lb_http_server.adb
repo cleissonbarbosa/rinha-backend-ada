@@ -17,11 +17,83 @@ package body LB_HTTP_Server is
       return AWS.Response.Build (AWS.MIME.Text_Plain, "OK");
    end Root;
 
+   function Is_Valid_UUID (UUID : String) return Boolean is
+   begin
+      -- UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
+      if UUID'Length /= 36 then
+         return False;
+      end if;
+      
+      -- Check positions of hyphens
+      if UUID (UUID'First + 8) /= '-' or
+         UUID (UUID'First + 13) /= '-' or
+         UUID (UUID'First + 18) /= '-' or
+         UUID (UUID'First + 23) /= '-' then
+         return False;
+      end if;
+      
+      -- Check that other characters are hex digits
+      for I in UUID'Range loop
+         if I /= UUID'First + 8 and I /= UUID'First + 13 and 
+            I /= UUID'First + 18 and I /= UUID'First + 23 then
+            if not (UUID (I) in '0' .. '9' or UUID (I) in 'a' .. 'f' or UUID (I) in 'A' .. 'F') then
+               return False;
+            end if;
+         end if;
+      end loop;
+      
+      return True;
+   end Is_Valid_UUID;
+
+   function Extract_Correlation_Id (JSON : String) return String is
+      First_Q, Second_Q : Natural := 0;
+      Search_Str : constant String := """correlationId"":""";
+   begin
+      -- Find the start of correlationId value
+      for I in JSON'First .. JSON'Last - Search_Str'Length + 1 loop
+         if JSON (I .. I + Search_Str'Length - 1) = Search_Str then
+            First_Q := I + Search_Str'Length - 1;
+            exit;
+         end if;
+      end loop;
+
+      if First_Q = 0 then
+         return "";  -- Not found
+      end if;
+
+      -- Find the closing quote
+      for I in First_Q + 1 .. JSON'Last loop
+         if JSON (I) = '"' then
+            Second_Q := I;
+            exit;
+         end if;
+      end loop;
+
+      if Second_Q = 0 then
+         return "";  -- No closing quote
+      end if;
+
+      return JSON (First_Q + 1 .. Second_Q - 1);
+   exception
+      when others => 
+         return "";
+   end Extract_Correlation_Id;
+
    function Payments (Req : in AWS.Status.Data) return AWS.Response.Data is
       Req_Body : constant String := Ada.Strings.Unbounded.To_String (AWS.Status.Binary_Data (Req));
+      Correlation_Id : constant String := Extract_Correlation_Id (Req_Body);
    begin
       Put_Line ("LB: Processing payments request, body: " & Req_Body);
-      -- Direct call instead of async task for debugging
+      
+      -- Validate UUID before sending to backend
+      if Correlation_Id = "" or not Is_Valid_UUID (Correlation_Id) then
+         Put_Line ("LB: Invalid correlationId, returning 422");
+         return AWS.Response.Build (AWS.MIME.Application_JSON, 
+            "{""error"":""Invalid correlationId format""}", 
+            Status_Code => AWS.Messages.S422);
+      end if;
+      
+      -- Direct call without waiting for response to avoid blocking
       Put_Line ("LB: About to call Send_To_Any_Backend directly");
       LB_Socket_Router.Send_To_Any_Backend (Req_Body & LB_Event_Types.PAYMENT_POST);
       Put_Line ("LB: Send_To_Any_Backend completed");

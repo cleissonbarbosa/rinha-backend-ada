@@ -6,17 +6,35 @@ package body Payment_DB is
       procedure Purge is
       begin
          S := (others => <>);
+         Duplicate_Map.Clear;
       end Purge;
-      procedure Add_Default (Amount : Long_Long_Float) is
+      
+      procedure Add_Default (Amount : Float; Correlation_Id : String; Is_New : out Boolean) is
+         ID : constant Unbounded_String := To_Unbounded_String (Correlation_Id);
       begin
+         if Duplicate_Map.Contains (ID) then
+            Is_New := False;  -- Pagamento duplicado
+            return;
+         end if;
+         Duplicate_Map.Insert (ID, True);
          S.Default_Total_Requests := S.Default_Total_Requests + 1;
-         S.Default_Total_Amount   := S.Default_Total_Amount + Amount;
+         S.Default_Total_Amount := S.Default_Total_Amount + Long_Long_Float(Amount);
+         Is_New := True;
       end Add_Default;
-      procedure Add_Fallback (Amount : Long_Long_Float) is
+      
+      procedure Add_Fallback (Amount : Float; Correlation_Id : String; Is_New : out Boolean) is
+         ID : constant Unbounded_String := To_Unbounded_String (Correlation_Id);
       begin
+         if Duplicate_Map.Contains (ID) then
+            Is_New := False;  -- Pagamento duplicado
+            return;
+         end if;
+         Duplicate_Map.Insert (ID, True);
          S.Fallback_Total_Requests := S.Fallback_Total_Requests + 1;
-         S.Fallback_Total_Amount   := S.Fallback_Total_Amount + Amount;
+         S.Fallback_Total_Amount := S.Fallback_Total_Amount + Long_Long_Float(Amount);
+         Is_New := True;
       end Add_Fallback;
+      
       function Get_Summary return Summary is
       begin
          return S;

@@ -1,6 +1,6 @@
 services:
   backend-1:
-    image: ada-backend-optimized:latest
+    image: ada-backend:latest
     container_name: ada-backend-1
     restart: always
     environment:
@@ -25,7 +25,7 @@ services:
           memory: '125MB'
 
   backend-2:
-    image: ada-backend-optimized:latest
+    image: ada-backend:latest
     container_name: ada-backend-2
     restart: always
     environment:
@@ -50,7 +50,7 @@ services:
           memory: '125MB'
 
   load-balancer:
-    image: ada-lb-optimized:latest
+    image: ada-lb:latest
     container_name: ada-lb
     restart: always
     depends_on:

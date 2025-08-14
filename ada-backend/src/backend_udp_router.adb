@@ -189,11 +189,11 @@ package body Backend_UDP_Router is
          PLast  : Stream_Element_Offset := 0;
          PFrom  : Sock_Addr_Type;
       begin
-         Put_Line ("Peer_Receiver task started");
+         -- Put_Line ("Peer_Receiver task started");
          loop
             -- receive into stream buffer
             Receive_Socket (Socket_Internal, PBuf, PLast, PFrom);
-            Put_Line ("Backend received peer message, length:" & Natural'Image(Natural(PLast)));
+            -- Put_Line ("Backend received peer message, length:" & Natural'Image(Natural(PLast)));
             declare
                Len : constant Natural := Natural (PLast);
                S   : String (1 .. Len);
@@ -201,27 +201,27 @@ package body Backend_UDP_Router is
                for I in 1 .. Len loop
                   S (I) := Character'Val (Integer (PBuf (Stream_Element_Offset (I))));
                end loop;
-               Put_Line ("Peer message content: " & S);
+               -- Put_Line ("Peer message content: " & S);
                declare
                   Kind : constant Character := S (S'Last);
                begin
-                  Put_Line ("Peer message type: " & Kind);
+                  -- Put_Line ("Peer message type: " & Kind);
                   if Kind = LB_Event_Types.PAYMENT_SUMMARY then
-                     Put_Line ("Processing peer PAYMENT_SUMMARY request");
+                     -- Put_Line ("Processing peer PAYMENT_SUMMARY request");
                      -- Peer asked our summary; reply with merge payload 'b' as CSV
                      declare
                         Sum : constant Summary := DB.Get_Summary;
                         CSV : constant String := Integer'Image (Sum.Default_Total_Requests) & "," & Long_Long_Float'Image (Sum.Default_Total_Amount) & "," &
                                                   Integer'Image (Sum.Fallback_Total_Requests) & "," & Long_Long_Float'Image (Sum.Fallback_Total_Amount) & "b";
                      begin
-                        Put_Line ("Sending CSV response to peer: " & CSV);
+                        -- Put_Line ("Sending CSV response to peer: " & CSV);
                         Send_To (Socket_Internal, CSV, Peer_Addr);
                      end;
                   elsif Kind = LB_Event_Types.PAYMENT_SUMMARY_MERGE then
-                     Put_Line ("Processing peer PAYMENT_SUMMARY_MERGE response");
+                     -- Put_Line ("Processing peer PAYMENT_SUMMARY_MERGE response");
                      -- Complete waiter
                      Peer_Wait.Put (S);
-                     Put_Line ("Completed peer wait with response");
+                     -- Put_Line ("Completed peer wait with response");
                   elsif Kind = LB_Event_Types.PURGE then
                      Put_Line ("Processing peer PURGE request");
                      DB.Purge;
@@ -287,16 +287,16 @@ package body Backend_UDP_Router is
                -- propagate to peer
                Send_To (Socket_Internal, String'(1 => LB_Event_Types.PURGE), Peer_Addr);
             elsif Kind = LB_Event_Types.PAYMENT_SUMMARY then
-               Put_Line ("Backend processing PAYMENT_SUMMARY request");
+               -- Put_Line ("Backend processing PAYMENT_SUMMARY request");
                -- ask peer and await CSV, merge and reply JSON to LB
-               Put_Line ("Sending summary request to peer");
+               -- Put_Line ("Sending summary request to peer");
                Send_To (Socket_Internal, Payload & LB_Event_Types.PAYMENT_SUMMARY, Peer_Addr);
-               Put_Line ("Waiting for peer response...");
+               -- Put_Line ("Waiting for peer response...");
                declare
                   Res : Unbounded_String;
                begin
                   Peer_Wait.Take (Res);
-                  Put_Line ("Received peer response: " & To_String(Res));
+                  -- Put_Line ("Received peer response: " & To_String(Res));
                   declare
                      CSV : constant String := To_String (Res);
                      -- parse CSV: dReq,dAmt,fReq,fAmt,'b'
@@ -318,14 +318,14 @@ package body Backend_UDP_Router is
                         Reply : constant String := Summary_To_JSON (Merged);
                         LB_Addr : Sock_Addr_Type;
                      begin
-                        Put_Line ("Sending JSON reply to LB: " & Reply);
-                        Put_Line ("Original LB address: " & Image(From.Addr) & ":" & Port_Type'Image(From.Port));
+                        -- Put_Line ("Sending JSON reply to LB: " & Reply);
+                        -- Put_Line ("Original LB address: " & Image(From.Addr) & ":" & Port_Type'Image(From.Port));
                         -- Respond to LB listening port (9998), not the ephemeral port
                         LB_Addr.Addr := From.Addr;  -- Same IP
                         LB_Addr.Port := 9998;       -- LB listening port
-                        Put_Line ("Sending to LB listening port: " & Image(LB_Addr.Addr) & ":9998");
+                        -- Put_Line ("Sending to LB listening port: " & Image(LB_Addr.Addr) & ":9998");
                         Send_To (Socket_In, Reply, LB_Addr);
-                        Put_Line ("Reply sent to LB successfully");
+                        -- Put_Line ("Reply sent to LB successfully");
                      end;
                   end;
                end;
