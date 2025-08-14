@@ -164,7 +164,8 @@ package body LB_HTTP_Server is
 
    procedure Start is
    begin
-      AWS.Server.Start (HTTP, "LB_Ada", Dispatch'Access, Port => 9999);
-      Ada.Text_IO.Put_Line ("LB HTTP server started on :9999");
+      -- Start AWS server with optimized configuration
+      AWS.Server.Start (HTTP, "LB_Ada", Dispatch'Access, Port => 9999, Max_Connection => 1000);
+      Ada.Text_IO.Put_Line ("LB HTTP server started on :9999 with optimized settings");
    end Start;
 end LB_HTTP_Server;

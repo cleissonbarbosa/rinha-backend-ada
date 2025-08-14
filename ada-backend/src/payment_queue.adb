@@ -6,9 +6,9 @@ with Payment_DB; use Payment_DB;
 
 package body Payment_Queue is
 
-   -- Queue configuration similar to Java
-   Queue_Size : constant := 12000;
-   Worker_Count : constant := 16;
+   -- Queue configuration optimized for high throughput
+   Queue_Size : constant := 20000;
+   Worker_Count : constant := 32;
    
    -- Queue storage
    type Payment_Array is array (1 .. Queue_Size) of Unbounded_String;
@@ -150,8 +150,8 @@ package body Payment_Queue is
                -- Put_Line ("Worker: Default processor failed, retry_count=" & Retry_Count'Image);
                Retry_Count := Retry_Count + 1;
                
-               -- Small delay between retries
-               delay 0.001; -- Reduced delay for better performance
+               -- Optimized retry delay for high throughput
+               delay 0.0001; -- Reduced delay significantly
             end loop;
             
             -- If default failed after retries, try fallback

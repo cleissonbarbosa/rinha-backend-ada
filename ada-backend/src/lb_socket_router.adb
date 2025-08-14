@@ -119,7 +119,7 @@ package body LB_Socket_Router is
                end if;
             end;
          or
-            delay 0.5;  -- Short polling interval
+            delay 0.1;  -- Even shorter polling interval for better responsiveness
             -- Check timeout
             if Ada.Calendar.Clock - Start_Time > Max_Wait_Time then
                Put_Line ("LB: Summary request timed out after " & Max_Wait_Time'Image & "s, using fallback");
